@@ -1,0 +1,113 @@
+import netCDF4 as nc
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+file_path = r'C:/Users/aarshad/Downloads/atsc5010_Lab1.nc'
+
+try:
+    f = nc.Dataset(file_path)
+except FileNotFoundError:
+    print("File not found. Please check the file path and name.")
+else:
+    # Ensure that the variables exist in the dataset
+    try:
+        LWC_CDP = f['LWC_CDP'][:]
+        LWC_PVM = f['LWC_PVM'][:]
+        N_CDP = f['N_CDP'][:]
+        N_FSSP = f['N_FSSP'][:]
+        WWIND = f['WWIND'][:]
+    except KeyError as e:
+        print(f"Variable {e} not found in the dataset.")
+        exit()
+
+    # Check if the data dimensions match the expected sizes
+    expected_len_100Hz = 1001
+    expected_len_25Hz = 2501
+    
+    if LWC_CDP.size != expected_len_100Hz or LWC_PVM.size != expected_len_100Hz or N_CDP.size != expected_len_100Hz or N_FSSP.size != expected_len_100Hz:
+        print("Error: Data arrays do not match the expected length for 100Hz sampling.")
+        exit()
+
+    if WWIND.size != expected_len_25Hz:
+        print("Error: WWIND array does not match the expected length for 25Hz sampling.")
+        exit()
+
+    x_100Hz = np.linspace(-5, 5, num=expected_len_100Hz)
+    x_25Hz = np.linspace(-5, 5, num=expected_len_25Hz)
+
+    fig, axs = plt.subplots(3, 1, figsize=(8, 10))
+
+    axs[0].plot(x_100Hz, LWC_PVM, color='green', label='PVM', linewidth=1)
+    axs[0].plot(x_100Hz, LWC_CDP, color='red', label='CDP', linewidth=1)
+    axs[0].set_ylim(0, 3)
+    axs[0].set_xlim(-5, 5)
+    axs[0].set_title('Cloud Liquid Water Content')
+    axs[0].set_xlabel('Distance from Center of Cloud (Km)')
+    axs[0].set_ylabel('H$_2$0(gm$^-3$)')
+    axs[0].legend(loc='lower right')
+
+    axs[1].plot(x_100Hz, N_FSSP, color='cyan', label='FSSP', linewidth=1)
+    axs[1].plot(x_100Hz, N_CDP, color='red', label='CDP', linewidth=1)
+    axs[1].set_xlim(-5, 5)
+    axs[1].set_title('Number Concentration')
+    axs[1].set_xlabel('Distance from Center of Cloud (Km)')
+    axs[1].set_ylabel('Number Concentration')
+    axs[1].legend(loc='upper right')
+
+    smoothed_WWIND = pd.Series(WWIND).rolling(window=25, min_periods=1).mean()  # Adjusting rolling window
+
+    axs[2].plot(x_25Hz, WWIND, color='red', label='Vertical Velocity', linewidth=1)
+    axs[2].plot(x_25Hz, smoothed_WWIND, color='blue', label='Smoothed Vertical Velocity', linewidth=1.5)
+    axs[2].plot(x_25Hz, np.where(smoothed_WWIND > 12, smoothed_WWIND, np.nan), color='green', linewidth=1.5)
+    axs[2].axhline(0, color='black', linestyle='--', linewidth=0.5)
+    axs[2].set_ylim(-10, 20)
+    axs[2].set_xlim(-5, 5)
+    axs[2].set_title('Vertical Velocity')
+    axs[2].set_xlabel('Distance from Center of Cloud (Km)')
+    axs[2].set_ylabel('Vertical Velocity (m/s)')
+
+    plt.tight_layout()
+    plt.show()
+
+    # Second part of the script
+    mask_lwc = (LWC_CDP > 0.02) & (LWC_PVM > 0.02)
+    
+    plt.figure()
+    plt.plot(LWC_CDP[mask_lwc], LWC_PVM[mask_lwc], 'rd', markersize=3)
+    plt.xlim(0, 2.5)
+    plt.ylim(0, 2.5)
+    plt.plot([0, 2.5], [0, 2.5], 'k-')
+
+    z = np.polyfit(LWC_CDP[mask_lwc], LWC_PVM[mask_lwc], 1)
+    p = np.poly1d(z)
+    plt.plot(LWC_CDP[mask_lwc], p(LWC_CDP[mask_lwc]), 'r-', linewidth=2)
+
+    corr_coef = np.corrcoef(LWC_CDP[mask_lwc], LWC_PVM[mask_lwc])[0, 1]
+    plt.text(0.5, 2.2, f'Correlation Coefficient: {corr_coef:.2f}')
+
+    plt.title('Comparison of Liquid Water Content Measurements')
+    plt.xlabel('CDP Liquid Water Content (g/m3)')
+    plt.ylabel('PVM Liquid Water Content (g/m3)')
+    plt.show()
+
+    # Repeat analysis for droplet concentrations greater than 1 cm-3
+    mask_conc = (N_CDP > 1) & (N_FSSP > 1)
+
+    plt.figure()
+    plt.plot(N_CDP[mask_conc], N_FSSP[mask_conc], 'rd', markersize=3)
+    plt.xlim(0, 100)
+    plt.ylim(0, 100)
+    plt.plot([0, 100], [0, 100], 'k-')
+
+    z = np.polyfit(N_CDP[mask_conc], N_FSSP[mask_conc], 1)
+    p = np.poly1d(z)
+    plt.plot(N_CDP[mask_conc], p(N_CDP[mask_conc]), 'r-', linewidth=2)
+
+    corr_coef = np.corrcoef(N_CDP[mask_conc], N_FSSP[mask_conc])[0, 1]
+    plt.text(50, 90, f'Correlation Coefficient: {corr_coef:.2f}')
+
+    plt.title('Comparison of Droplet Concentration Measurements')
+    plt.xlabel('CDP Droplet Concentration (cm-3)')
+    plt.ylabel('FSSP Droplet Concentration (cm-3)')
+    plt.show()
